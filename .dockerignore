@@ -1,0 +1,14 @@
+**/node_modules
+web/dist
+**/*.tsbuildinfo
+warroom
+.git
+.github
+charts
+.env
+.env.*
+**/*.key
+**/*.pem
+.DS_Store
+
+dashboards

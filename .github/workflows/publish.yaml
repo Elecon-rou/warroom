@@ -1,0 +1,119 @@
+name: Publish image and OCI chart
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yaml
+  publish:
+    needs: checks
+    if: github.ref_type == 'tag' || github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Resolve immutable image and chart versions
+        id: release
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PYTHON'
+          import os, re
+          repository = os.environ['REPOSITORY'].lower()
+          if os.environ['REF_TYPE'] == 'tag':
+              version = os.environ['REF_NAME'].removeprefix('v')
+              # Deliberately excludes build metadata: one registry tag per release.
+              pattern = r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?'
+              if not re.fullmatch(pattern, version):
+                  raise SystemExit('Release tag must be vMAJOR.MINOR.PATCH[-prerelease]')
+              for part in version.split('-', 1)[1:]:
+                  if any(p.isdigit() and len(p) > 1 and p.startswith('0') for p in part.split('.')):
+                      raise SystemExit('Numeric prerelease identifiers cannot have leading zeroes')
+              image_tag = version
+          else:
+              version = '0.0.0-dev.' + os.environ['GITHUB_RUN_NUMBER'] + '.' + os.environ['GITHUB_RUN_ATTEMPT']
+              image_tag = 'sha-' + os.environ['GITHUB_SHA']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'image=ghcr.io/{repository}\nchart_registry=ghcr.io/{repository}/charts\nversion={version}\nimage_tag={image_tag}\n')
+          PYTHON
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        id: meta
+        with:
+          images: ${{ steps.release.outputs.image }}
+          tags: |
+            type=raw,value=${{ steps.release.outputs.image_tag }}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
+            type=raw,value=edge,enable=${{ github.ref_type != 'tag' }}
+      - name: Publish multi-platform image
+        id: image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
+        with:
+          version: v3.17.2
+      - name: Package and publish OCI Helm chart
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_USER: ${{ github.actor }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          IMAGE_TAG: ${{ steps.release.outputs.image_tag }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          CHART_REGISTRY: ${{ steps.release.outputs.chart_registry }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$GH_USER" --password-stdin
+          trap 'helm registry logout ghcr.io' EXIT
+          mkdir -p "$RUNNER_TEMP/chart" "$RUNNER_TEMP/packages"
+          cp -R charts/warroom "$RUNNER_TEMP/chart/warroom"
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'chart/warroom/values.yaml'
+          values = path.read_text()
+          values = values.replace('  repository: ""', '  repository: "' + os.environ['IMAGE'] + '"', 1)
+          values = values.replace('  tag: ""', '  tag: "' + os.environ['IMAGE_TAG'] + '"', 1)
+          values = values.replace('  digest: ""', '  digest: "' + os.environ['IMAGE_DIGEST'] + '"', 1)
+          path.write_text(values)
+          chart = path.with_name('Chart.yaml')
+          chart.write_text(chart.read_text() + '\nannotations:\n  org.opencontainers.image.source: https://github.com/' + os.environ['GITHUB_REPOSITORY'] + '\n')
+          PYTHON
+          helm lint --strict "$RUNNER_TEMP/chart/warroom"
+          helm package "$RUNNER_TEMP/chart/warroom" --version "$VERSION" \
+            --app-version "$IMAGE_TAG" --destination "$RUNNER_TEMP/packages"
+          helm push "$RUNNER_TEMP/packages/warroom-$VERSION.tgz" "oci://$CHART_REGISTRY"
+          {
+            echo "Image: $IMAGE@$IMAGE_DIGEST"
+            echo "Chart: oci://$CHART_REGISTRY/warroom --version $VERSION"
+          } >> "$GITHUB_STEP_SUMMARY"
