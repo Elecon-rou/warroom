@@ -3677,6 +3677,12 @@ h1 {
   padding: 9px 11px;
   min-width: 0;
 }
+.dashboard-toolbar > :is(button, input, select) {
+  height: 40px;
+  min-height: 40px;
+  padding-block: 0;
+  line-height: 20px;
+}
 .dashboard-modes {
   border-bottom: 1px solid #30444d;
   margin-bottom: 20px;
