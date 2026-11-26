@@ -25,6 +25,8 @@ import (
 //go:embed dashboard-skills/*.md
 var dashboardSkills embed.FS
 
+const maxDashboardWidgets = 64
+
 type DashboardWidget struct {
 	ChartStyle string  `json:"chartStyle,omitempty"`
 	AxisMode   string  `json:"axisMode,omitempty"`
@@ -55,7 +57,7 @@ type Dashboard struct {
 
 func dashboardText(s string, n int) bool { return strings.TrimSpace(s) != "" && len(s) <= n }
 func (d Dashboard) validate() error {
-	if d.Version != 1 || !dashboardText(d.ID, 100) || !dashboardText(d.Title, 160) || !finite(d.Range) || d.Range < 60 || d.Range > 31*86400 || !oneOf(d.Refresh, 0, 15, 30, 60, 300) || d.Widgets == nil || len(d.Widgets) > 24 {
+	if d.Version != 1 || !dashboardText(d.ID, 100) || !dashboardText(d.Title, 160) || !finite(d.Range) || d.Range < 60 || d.Range > 31*86400 || !oneOf(d.Refresh, 0, 15, 30, 60, 300) || d.Widgets == nil || len(d.Widgets) > maxDashboardWidgets {
 		return fmt.Errorf("Invalid dashboard configuration.")
 	}
 	ids := map[string]bool{}
@@ -257,7 +259,7 @@ func partialDashboardWidgets(text string) []json.RawMessage {
 			return nil
 		}
 		result := []json.RawMessage{}
-		for decoder.More() && len(result) < 24 {
+		for decoder.More() && len(result) < maxDashboardWidgets {
 			var widget json.RawMessage
 			if decoder.Decode(&widget) != nil {
 				break
@@ -451,8 +453,8 @@ func parseGeneratedDashboard(data string, start, end float64) (Dashboard, error)
 	put(root, "range", end-start)
 	put(root, "refresh", 0)
 	var widgets []map[string]json.RawMessage
-	if err := json.Unmarshal(root["widgets"], &widgets); err != nil || len(widgets) > 24 {
-		return Dashboard{}, fmt.Errorf("Expected at most 24 widgets.")
+	if err := json.Unmarshal(root["widgets"], &widgets); err != nil || len(widgets) > maxDashboardWidgets {
+		return Dashboard{}, fmt.Errorf("Expected at most %d widgets.", maxDashboardWidgets)
 	}
 	for i, widget := range widgets {
 		if widget == nil {

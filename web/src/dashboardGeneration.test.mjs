@@ -1,3 +1,4 @@
+import { newWidget } from './dashboard.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readDashboardGeneration, generationTime } from './dashboardGeneration.ts';
@@ -97,4 +98,36 @@ test('complete widget events are delivered before the final response and revisio
   state = mergeWidgetEvent(state, { ...event, revision: 2 });
   assert.equal(Object.keys(state.widgets).length, 1);
   assert.equal(mergeWidgetEvent(state, event), state);
+});
+
+test('generation streams all 64 panels and rejects an out-of-range 65th event', async () => {
+  const events = Array.from({ length: 64 }, (_, index) => ({
+    type: 'widget',
+    revision: 1,
+    index,
+    widget: { ...newWidget(), query: 'up' },
+    elapsedMs: index,
+  }));
+  const received = [];
+  const response = stream([
+    ...events.map((event) => JSON.stringify(event) + '\n'),
+    JSON.stringify({ type: 'result', status: 200, data: {} }) + '\n',
+  ]);
+  await readDashboardGeneration(
+    response,
+    () => {},
+    (event) => received.push(event.index),
+  );
+  assert.deepEqual(
+    received,
+    Array.from({ length: 64 }, (_, index) => index),
+  );
+  await assert.rejects(
+    () =>
+      readDashboardGeneration(
+        stream([JSON.stringify({ ...events[0], index: 64 }) + '\n']),
+        () => {},
+      ),
+    /Invalid dashboard generation response/,
+  );
 });

@@ -52,7 +52,7 @@ test('invalid imports are rejected instead of silently replacing data', () => {
     { widgets: [{ ...w, min: NaN }] },
     { range: Infinity },
     { refresh: 1 },
-    { widgets: Array.from({ length: 25 }, newWidget) },
+    { widgets: Array.from({ length: 65 }, newWidget) },
   ])
     assert.throws(() => parseDashboard({ ...d, ...patch }));
   assert.equal(parseDashboard({ ...d, password: 'not part of schema' }).password, undefined);
@@ -142,5 +142,20 @@ test('time-series display options persist in shared dashboards and reject malfor
   );
   assert.throws(() =>
     parseDashboard({ ...state.dashboard, widgets: [{ ...widget, source: 'logs' }] }),
+  );
+});
+
+test('dashboard imports accept 48 and 64 panels and reject a 65th panel', () => {
+  for (const count of [48, 64]) {
+    const dashboard = { ...newDashboard(), widgets: Array.from({ length: count }, newWidget) };
+    assert.equal(parseDashboard(dashboard).widgets.length, count);
+    const state = { ...defaults(), dashboard };
+    assert.equal(
+      readLocation(locationHash('dashboards', state)).explorer.dashboard.widgets.length,
+      count,
+    );
+  }
+  assert.throws(() =>
+    parseDashboard({ ...newDashboard(), widgets: Array.from({ length: 65 }, newWidget) }),
   );
 });

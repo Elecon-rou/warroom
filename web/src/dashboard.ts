@@ -1,5 +1,7 @@
 import type { Kind, ResponseData, Series, Trace } from './types.ts';
 
+export const maxDashboardWidgets = 64;
+
 export const widgetTypes = [
   'blinkenlights',
   'bars',
@@ -96,7 +98,7 @@ export function parseDashboard(value: unknown): Dashboard {
     d.range > 2678400 ||
     ![0, 15, 30, 60, 300].includes(d.refresh) ||
     !Array.isArray(d.widgets) ||
-    d.widgets.length > 24
+    d.widgets.length > maxDashboardWidgets
   )
     throw new Error('Invalid dashboard: version, id, title, time range, refresh or widgets.');
   const ids = new Set<string>();

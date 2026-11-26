@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Copy, Settings2, Trash2 } from 'lucide-react';
 import { DashboardWidgetView, type WidgetResult } from './DashboardWidgetView';
 import { dashboardLayout } from './dashboardLayout';
 import { useElementSize } from './useElementSize';
-import type { DashboardWidget } from './dashboard';
+import { maxDashboardWidgets, type DashboardWidget } from './dashboard';
 
 type Controls = {
   selectedId?: string;
@@ -65,7 +65,7 @@ export function DashboardGrid({
                 </button>
                 <button
                   aria-label={`Duplicate ${w.title}`}
-                  disabled={widgets.length >= 24}
+                  disabled={widgets.length >= maxDashboardWidgets}
                   onClick={() => controls.onDuplicate(w)}
                 >
                   <Copy size={13} />

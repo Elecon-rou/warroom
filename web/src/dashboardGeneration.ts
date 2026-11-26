@@ -1,4 +1,4 @@
-import { parseDashboard, type DashboardWidget } from './dashboard.ts';
+import { maxDashboardWidgets, parseDashboard, type DashboardWidget } from './dashboard.ts';
 export type DashboardProgress = {
   type: 'progress';
   phase: string;
@@ -43,7 +43,7 @@ export async function readDashboardGeneration(
       value.revision > 0 &&
       Number.isInteger(value.index) &&
       value.index >= 0 &&
-      value.index < 24
+      value.index < maxDashboardWidgets
     ) {
       const validated = parseDashboard({
         version: 1,

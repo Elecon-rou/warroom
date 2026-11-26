@@ -679,3 +679,29 @@ func TestDashboardRevisionUsesCurrentContextAndPreservesID(t *testing.T) {
 		t.Fatal(w.Code, w.Body, gateContext, designContext)
 	}
 }
+
+func TestDashboardPanelLimit64(t *testing.T) {
+	for _, count := range []int{48, 64, 65} {
+		dashboard := testDashboard()
+		widget := dashboard.Widgets[0]
+		dashboard.Widgets = make([]DashboardWidget, count)
+		for i := range dashboard.Widgets {
+			dashboard.Widgets[i] = widget
+			dashboard.Widgets[i].ID = fmt.Sprintf("panel-%d", i)
+		}
+		data, _ := json.Marshal(dashboard)
+		parsed, err := parseDashboard(string(data))
+		generated, generationErr := parseGeneratedDashboard(string(data), 1, 3601)
+		if count <= 64 {
+			if err != nil || generationErr != nil || len(parsed.Widgets) != count || len(generated.Widgets) != count {
+				t.Fatalf("%d: imported %v, generated %v", count, err, generationErr)
+			}
+		} else if err == nil || generationErr == nil {
+			t.Fatal("65 panels were accepted")
+		}
+		partial := partialDashboardWidgets(string(data))
+		if len(partial) != min(count, 64) {
+			t.Fatalf("stream preview emitted %d of %d widgets", len(partial), count)
+		}
+	}
+}

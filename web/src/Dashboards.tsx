@@ -16,6 +16,7 @@ import { Download, Link, Play, Plus, RefreshCw, Square } from 'lucide-react';
 import { DashboardEditor } from './DashboardEditor';
 import { type WidgetResult } from './DashboardWidgetView';
 import {
+  maxDashboardWidgets,
   newDashboard,
   newWidget,
   parseDashboard,
@@ -768,7 +769,7 @@ export function Dashboards({ value, services, onChange }: Props) {
           {mode === 'visual' && !liveDraft && (
             <button
               className="subtle-button add-panel"
-              disabled={dashboard.widgets.length >= 24 || !!editing}
+              disabled={dashboard.widgets.length >= maxDashboardWidgets || !!editing}
               onClick={() =>
                 setEditing({
                   ...newWidget(),
