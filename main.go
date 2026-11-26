@@ -82,6 +82,7 @@ func (a *App) handler() http.Handler {
 	mux.HandleFunc("POST /api/investigate", a.investigate)
 	mux.HandleFunc("POST /api/investigate/export", a.exportInvestigation)
 	mux.HandleFunc("GET /api/dashboards", a.provisionedDashboards)
+	mux.HandleFunc("POST /api/dashboards/variables/options", a.dashboardVariableOptions)
 	mux.HandleFunc("POST /api/dashboards/generate", a.generateDashboard)
 	mux.HandleFunc("POST /api/llm/generate", a.generate)
 	mux.HandleFunc("GET /api/llm/usage", a.tokenUsage)

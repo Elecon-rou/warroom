@@ -1,5 +1,7 @@
+import { useDashboardVariables } from './useDashboardVariables';
+import { interpolateVariables, resolveDashboardWidget } from './dashboardVariables';
 import { useDataSources, selectedSourceId } from './dataSources';
-import { widgetRequestKey as requestKey } from './dashboardResults';
+import { widgetRequestKey as requestKeyBase } from './dashboardResults';
 import { useEffect, useRef, useState } from 'react';
 import { DashboardGrid } from './DashboardGrid';
 import type { Dashboard } from './dashboard';
@@ -17,6 +19,17 @@ export function DashboardLivePreview({
   onResults: (results: Record<string, WidgetResult>) => void;
 }) {
   const sources = useDataSources();
+  const variables = useDashboardVariables(draft);
+  const valuesKey = JSON.stringify(variables.values);
+  const requestKey = (widget: Dashboard['widgets'][number]) =>
+    JSON.stringify([
+      requestKeyBase(widget),
+      valuesKey,
+      draft.variables || [],
+      window.start,
+      window.end,
+    ]);
+
   const cache = useRef(new Map<string, WidgetResult>());
   const controllers = useRef(new Map<string, AbortController>());
   const current = useRef(draft.widgets);
@@ -26,6 +39,7 @@ export function DashboardLivePreview({
   const running = useRef(0);
   const pumpRef = useRef<() => void>(() => {});
   function pump() {
+    if (variables.pending) return;
     for (const w of current.current) {
       const key = requestKey(w);
       if (running.current >= 3) break;
@@ -37,6 +51,7 @@ export function DashboardLivePreview({
       setRevision((v) => v + 1);
       void (async () => {
         try {
+          const resolved = resolveDashboardWidget(w, draft, variables.values, window);
           const graph = w.type === 'force-graph';
           const res = await fetch(graph ? '/api/service-graph' : '/api/query', {
             method: 'POST',
@@ -52,7 +67,7 @@ export function DashboardLivePreview({
                 : {
                     kind: w.source,
                     sourceId: selectedSourceId(sources, w.source, w.sourceId),
-                    query: w.query,
+                    query: resolved.query,
                     ...window,
                     step: 0,
                     limit: 100,
@@ -87,7 +102,7 @@ export function DashboardLivePreview({
       }
     });
     pumpRef.current();
-  }, [draft.widgets]);
+  }, [draft.widgets, valuesKey, variables.pending]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -100,5 +115,20 @@ export function DashboardLivePreview({
     draft.widgets.map((w) => [w.id, cache.current.get(requestKey(w)) || {}]),
   );
   useEffect(() => onResults(results), [revision, draft.widgets]);
-  return <DashboardGrid widgets={draft.widgets} results={results} />;
+  const titles = Object.fromEntries(
+    draft.widgets.map((widget) => {
+      try {
+        return [
+          widget.id,
+          interpolateVariables(widget.title, draft.variables || [], variables.values, {
+            title: true,
+            window,
+          }),
+        ];
+      } catch {
+        return [widget.id, widget.title];
+      }
+    }),
+  );
+  return <DashboardGrid widgets={draft.widgets} results={results} titles={titles} />;
 }

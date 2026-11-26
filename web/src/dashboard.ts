@@ -1,3 +1,4 @@
+import { parseDashboardVariables, type DashboardVariable } from './dashboardVariables.ts';
 import type { Kind, ResponseData, Series, Trace } from './types.ts';
 
 export const maxDashboardWidgets = 64;
@@ -36,6 +37,7 @@ export type DashboardWidget = {
   critical: number;
 };
 export type Dashboard = {
+  variables?: DashboardVariable[];
   version: 1;
   id: string;
   title: string;
@@ -140,6 +142,7 @@ export function parseDashboard(value: unknown): Dashboard {
     title: d.title,
     range: d.range,
     refresh: d.refresh,
+    ...(d.variables !== undefined ? { variables: parseDashboardVariables(d.variables) } : {}),
     widgets: d.widgets.map((w) => ({
       id: w.id,
       title: w.title,

@@ -16,10 +16,12 @@ export function DashboardGrid({
   widgets,
   results,
   controls,
+  titles,
 }: {
   widgets: DashboardWidget[];
   results: Record<string, WidgetResult>;
   controls?: Controls;
+  titles?: Record<string, string>;
 }) {
   const sources = useDataSources();
   const { ref, width } = useElementSize();
@@ -39,7 +41,7 @@ export function DashboardGrid({
         >
           <header>
             <div className="dashboard-widget-heading">
-              <h2 title={w.title}>{w.title}</h2>
+              <h2 title={titles?.[w.id] || w.title}>{titles?.[w.id] || w.title}</h2>
               <small>
                 {w.type} · {sourceName(sources, w.source, w.sourceId)}
                 {results[w.id]?.updated

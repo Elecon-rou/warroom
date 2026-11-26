@@ -47,18 +47,22 @@ type DashboardWidget struct {
 	Critical   float64 `json:"critical"`
 }
 type Dashboard struct {
-	Version int               `json:"version"`
-	ID      string            `json:"id"`
-	Title   string            `json:"title"`
-	Range   float64           `json:"range"`
-	Refresh int               `json:"refresh"`
-	Widgets []DashboardWidget `json:"widgets"`
+	Variables []DashboardVariable `json:"variables,omitempty"`
+	Version   int                 `json:"version"`
+	ID        string              `json:"id"`
+	Title     string              `json:"title"`
+	Range     float64             `json:"range"`
+	Refresh   int                 `json:"refresh"`
+	Widgets   []DashboardWidget   `json:"widgets"`
 }
 
 func dashboardText(s string, n int) bool { return strings.TrimSpace(s) != "" && len(s) <= n }
 func (d Dashboard) validate() error {
 	if d.Version != 1 || !dashboardText(d.ID, 100) || !dashboardText(d.Title, 160) || !finite(d.Range) || d.Range < 60 || d.Range > 31*86400 || !oneOf(d.Refresh, 0, 15, 30, 60, 300) || d.Widgets == nil || len(d.Widgets) > maxDashboardWidgets {
 		return fmt.Errorf("Invalid dashboard configuration.")
+	}
+	if err := validateDashboardVariables(d.Variables); err != nil {
+		return err
 	}
 	ids := map[string]bool{}
 	for _, w := range d.Widgets {
@@ -284,7 +288,16 @@ func dashboardOutputSchema() map[string]any {
 		"valueField": text, "labelField": text, "unit": text, "min": number, "max": number, "warning": number, "critical": number,
 		"chartStyle": map[string]any{"type": "string", "enum": []string{"lines", "bars"}}, "axisMode": map[string]any{"type": "string", "enum": []string{"auto", "fixed"}},
 	}, "title", "type", "source", "sourceId", "query", "width", "reducer", "valueField", "labelField", "unit", "min", "max", "warning", "critical", "chartStyle", "axisMode")
-	return investigationSchema(map[string]any{"title": text, "widgets": map[string]any{"type": "array", "items": widget}, "refresh": map[string]any{"type": "integer", "enum": []int{0, 15, 30, 60, 300}}}, "title", "widgets", "refresh")
+	variable := investigationSchema(map[string]any{
+		"name": text, "label": text,
+		"type":     map[string]any{"type": "string", "enum": []string{"custom", "textbox", "query"}},
+		"source":   map[string]any{"type": "string", "enum": []string{"", "metrics", "logs", "traces"}},
+		"sourceId": text, "query": text,
+		"options": map[string]any{"type": "array", "items": text},
+		"current": map[string]any{"type": "array", "items": text},
+		"multi":   map[string]string{"type": "boolean"}, "includeAll": map[string]string{"type": "boolean"},
+	}, "name", "label", "type", "source", "sourceId", "query", "options", "current", "multi", "includeAll")
+	return investigationSchema(map[string]any{"title": text, "variables": map[string]any{"type": "array", "items": variable}, "widgets": map[string]any{"type": "array", "items": widget}, "refresh": map[string]any{"type": "integer", "enum": []int{0, 15, 30, 60, 300}}}, "title", "widgets", "refresh")
 }
 
 func (a *App) generateDashboard(w http.ResponseWriter, r *http.Request) {
@@ -418,7 +431,7 @@ func (a *App) generateDashboard(w http.ResponseWriter, r *http.Request) {
 		d.ID = q.Dashboard.ID
 	}
 	report("complete", "Dashboard draft validated")
-	respond(200, map[string]any{"verdict": "PASS", "dashboard": d, "discovery": calls, "skills": []string{"composition", "widgets", "sources"}, "model": c.Info().Model})
+	respond(200, map[string]any{"verdict": "PASS", "dashboard": d, "discovery": calls, "skills": []string{"composition", "widgets", "sources", "variables"}, "model": c.Info().Model})
 }
 
 // The model may omit boilerplate fields; expand them before strict canonical
@@ -492,7 +505,7 @@ func (a *App) constructDashboard(ctx context.Context, input string, start, end f
 }
 func (a *App) constructDashboardProgress(ctx context.Context, input string, start, end float64, attachments []DashboardAttachment, report dashboardReporter) (Dashboard, []DiscoveryCall, error) {
 	system := prompt("dashboard") + "\n"
-	for _, name := range []string{"composition", "widgets", "sources"} {
+	for _, name := range []string{"composition", "widgets", "sources", "variables"} {
 		b, _ := dashboardSkills.ReadFile("dashboard-skills/" + name + ".md")
 		system += string(b) + "\n"
 	}
@@ -628,8 +641,28 @@ func (a *App) constructDashboardProgress(ctx context.Context, input string, star
 				return Dashboard{}, calls, fmt.Errorf("Dashboard construction: %s", modelError.Error)
 			}
 			d, err := parseGeneratedDashboard(content, start, end)
+			if err == nil {
+				err = validateGeneratedVariableReferences(d)
+			}
 			if err == nil && len(d.Widgets) == 0 {
 				err = fmt.Errorf("No widgets were constructed.")
+			}
+			if err == nil {
+				for i, variable := range d.Variables {
+					if variable.Type != "query" {
+						continue
+					}
+					source, sourceErr := a.resolveSource(ctx, variable.Source, variable.SourceID)
+					if sourceErr != nil {
+						err = sourceErr
+						break
+					}
+					if !discovered[source.ID] {
+						err = fmt.Errorf("Discover the %s source before using its query variable.", source.ID)
+						break
+					}
+					d.Variables[i].SourceID = source.ID
+				}
 			}
 			if err == nil {
 				for i, widget := range d.Widgets {

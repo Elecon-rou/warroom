@@ -10,7 +10,12 @@ export function transferPreviewResults(
 ) {
   const old = new Map(previous.widgets.map((w) => [w.id, w]));
   const results: Record<string, WidgetResult> = {};
-  if (previous.range === next.range)
+  const variablesMatch =
+    JSON.stringify(previous.variables || []) === JSON.stringify(next.variables || []);
+  const unresolved = previous.variables?.some(
+    (variable) => variable.type === 'query' && !variable.current?.length,
+  );
+  if (previous.range === next.range && variablesMatch && !unresolved)
     for (const w of next.widgets) {
       const before = old.get(w.id),
         result = cache[w.id];

@@ -93,3 +93,42 @@ Time-series widgets use `type: "time-series"`, optional `chartStyle: "lines" | "
 Dashboard LLM prompts accept up to four PNG/JPEG screenshot or JSON reference files. Use Attach files, drop files on the prompt area, or paste a screenshot into the prompt. Screenshots show thumbnails, JSON has an expandable preview, and each file can be removed before generation. File selection is local; references are sent to the configured LLM provider only when Generate is pressed. Empty text prompts are supported when references are supplied. References are transient: never included in shared URLs or saved dashboard configurations.
 
 Screenshots are limited to 4 MiB each, 8000px per side, and 20 megapixels; JSON references must contain an object or array and total at most 256 KiB. Total decoded attachments are limited to 8 MiB; request bodies to 12 MiB. Both client and server validate uploads. The semantic filter receives all actual image pixels and JSON contents before any MCP access; malformed, rejected, or incomplete verdicts fail closed. The construction model receives the same references after PASS. Existing Grafana JSON can be translated into Warroom widgets using the composition skill, rather than blindly imported or executed. Generated drafts still require Apply JSON.
+
+## Dashboard variables
+
+Use **Variables** in the dashboard toolbar to edit dashboard-local variables in the right inspector. The selector row supports custom lists, text boxes (apply on Enter or blur), and datasource-backed query lists. Selections and definitions are exported with the JSON draft and shared URL. Deployed files remain read-only. Options load on dashboard/time-range/dependency changes; the refresh button reloads options. Each dashboard can contain 20 variables, each list up to 200 options and each multi-selection up to 20 values. Put parents before dependent query variables.
+
+```json
+"variables": [
+  {
+    "name": "namespace",
+    "label": "Environment",
+    "type": "custom",
+    "options": ["prod-helu", "dev-helu-test"],
+    "current": ["dev-helu-test"],
+    "multi": false,
+    "includeAll": false
+  },
+  {
+    "name": "pod",
+    "label": "Pod",
+    "type": "query",
+    "source": "metrics",
+    "sourceId": "your-configured-source-id",
+    "query": "label_values(up{namespace=\"$namespace\"}, pod)",
+    "current": ["$__all"],
+    "multi": true,
+    "includeAll": true
+  }
+]
+```
+
+A widget can use `sum(up{namespace="$namespace",pod=~"$pod"})` and the title `Nodes — $namespace`. `$name` and `${name}` interpolate the current selection; `${name:regex}`, `${name:raw}`, `${name:csv}` and `${name:json}` select explicit formats. Regex substitutions escape option values. Multi-select/All in metrics must use `=~` or `!~`; All is `.*`. Native LogsQL can use `field:~"${name:regex}"`. Jaeger service/operation/tag values are interpolated as strings, then URL encoded; Jaeger searches require single selections. Missing variables/values fail before a widget query is sent. Literal `$1` replacement references are preserved; `$$` emits a literal dollar sign.
+
+Query-variable helper syntax uses the selected source's native metadata API:
+
+- Metrics: `label_values(label)`, `label_values(metric_or_selector, label)`, `metrics()`.
+- Logs: `field_values(field)`, `field_values(field, LogsQL filter)`.
+- Traces: `services()`, `operations("$service")`.
+
+Built-ins include `$__from` and `$__to` (Unix milliseconds), `$__range`, `$__range_s`, `$__range_ms`, `$__interval`, `$__interval_ms`, and `$__rate_interval`. The automatic interval targets 240 data points; the rate interval uses four intervals with a 60-second minimum, rather than a discovered scrape interval. Variable syntax follows the familiar [Grafana syntax](https://grafana.com/docs/grafana/latest/visualizations/dashboards/variables/variable-syntax/); this is Warroom's schema, not a Grafana dashboard import.

@@ -1,3 +1,11 @@
+import { DashboardVariables } from './DashboardVariableBar';
+import { DashboardVariablesEditor } from './DashboardVariablesEditor';
+import { useDashboardVariables } from './useDashboardVariables';
+import {
+  interpolateVariables,
+  resolveDashboardWidget,
+  type DashboardVariable,
+} from './dashboardVariables';
 import { useDataSources, selectedSourceId } from './dataSources';
 import { transferPreviewResults } from './dashboardResults';
 import { DashboardGrid } from './DashboardGrid';
@@ -34,6 +42,32 @@ export function Dashboards({ value, services, onChange }: Props) {
   const catalogRequest = useRef<AbortController | null>(null);
   const selectedDeployment = deployed.find((d) => d.id === value?.id);
   const dashboard = value || fallback;
+  const [editingVariables, setEditingVariables] = useState(false);
+  const variableState = useDashboardVariables(dashboard, (values) => {
+    const next = dashboard.variables?.map((variable) => ({
+      ...variable,
+      current: values[variable.name] || [],
+    }));
+    if (next && JSON.stringify(next) !== JSON.stringify(dashboard.variables))
+      onChange({ ...dashboard, variables: next });
+  });
+  const variableValuesKey = JSON.stringify(variableState.values);
+  const titles = Object.fromEntries(
+    dashboard.widgets.map((widget) => {
+      try {
+        return [
+          widget.id,
+          interpolateVariables(widget.title, dashboard.variables || [], variableState.values, {
+            title: true,
+            window: { start: 0, end: dashboard.range },
+          }),
+        ];
+      } catch {
+        return [widget.id, widget.title];
+      }
+    }),
+  );
+
   async function reloadDashboards() {
     catalogRequest.current?.abort();
     const request = new AbortController();
@@ -109,7 +143,15 @@ export function Dashboards({ value, services, onChange }: Props) {
     const keys = Object.fromEntries(
       dashboard.widgets.map((w) => [
         w.id,
-        JSON.stringify([w.type === 'force-graph', w.source, w.sourceId, w.query, dashboard.range]),
+        JSON.stringify([
+          w.type === 'force-graph',
+          w.source,
+          w.sourceId,
+          w.query,
+          dashboard.range,
+          variableValuesKey,
+          dashboard.variables || [],
+        ]),
       ]),
     );
     const previous = queryKeys.current,
@@ -137,7 +179,7 @@ export function Dashboards({ value, services, onChange }: Props) {
       const timer = window.setTimeout(() => runRef.current(ids), 0);
       return () => clearTimeout(timer);
     }
-  }, [signature]);
+  }, [signature, variableValuesKey]);
   useEffect(
     () => () => {
       active.current?.abort();
@@ -183,7 +225,7 @@ export function Dashboards({ value, services, onChange }: Props) {
     );
   }
   async function run(ids?: string[]) {
-    if (running) return;
+    if (running || variableState.pending) return;
     try {
       parseDashboard(dashboard);
     } catch (e) {
@@ -209,6 +251,10 @@ export function Dashboards({ value, services, onChange }: Props) {
         const w = queue.shift()!;
         try {
           if (w.type !== 'force-graph' && !w.query.trim()) throw new Error('Query required.');
+          const resolved = resolveDashboardWidget(w, dashboard, variableState.values, {
+            start,
+            end,
+          });
           const graph = w.type === 'force-graph';
           const res = await fetch(graph ? '/api/service-graph' : '/api/query', {
             method: 'POST',
@@ -225,7 +271,7 @@ export function Dashboards({ value, services, onChange }: Props) {
                 : {
                     kind: w.source,
                     sourceId: selectedSourceId(sources, w.source, w.sourceId),
-                    query: w.query,
+                    query: resolved.query,
                     start,
                     end,
                     limit: 100,
@@ -255,6 +301,27 @@ export function Dashboards({ value, services, onChange }: Props) {
   runRef.current = (ids) => {
     void run(ids);
   };
+  const lastVariableRun = useRef('');
+  const variableRunKey = JSON.stringify([
+    dashboard.id,
+    variableState.values,
+    sources.map((source) => source.id),
+  ]);
+  useEffect(() => {
+    if (variableState.pending || !dashboard.variables?.length || liveDraft) return;
+    if (lastVariableRun.current === variableRunKey) return;
+    lastVariableRun.current = variableRunKey;
+    const timer = window.setTimeout(() => runRef.current(), 0);
+    return () => window.clearTimeout(timer);
+  }, [variableRunKey, variableState.pending, !!liveDraft]);
+  function selectVariable(name: string, current: string[]) {
+    apply({
+      ...dashboard,
+      variables: dashboard.variables?.map((variable) =>
+        variable.name === name ? { ...variable, current } : variable,
+      ),
+    });
+  }
   function exportJSON() {
     try {
       const valid = parseDashboard(liveDraft || dashboard);
@@ -287,6 +354,7 @@ export function Dashboards({ value, services, onChange }: Props) {
     setGenerationOutcome(null);
     setLiveDraft(null);
     setEditing(null);
+    setEditingVariables(false);
     previewResults.current = {};
     previewRevision.current = { revision: 0, widgets: {} };
     generationStarted.current = Date.now();
@@ -341,6 +409,7 @@ export function Dashboards({ value, services, onChange }: Props) {
             title: 'Generated dashboard',
             range: end - start,
             refresh: 0,
+            ...(dashboard.variables ? { variables: dashboard.variables } : {}),
             widgets: Object.entries(next.widgets)
               .sort(([a], [b]) => Number(a) - Number(b))
               .map(([, widget]) => widget),
@@ -397,14 +466,16 @@ export function Dashboards({ value, services, onChange }: Props) {
           </button>
           <button
             className="run-button"
-            disabled={!!liveDraft || !dashboard.widgets.length}
+            disabled={
+              !!liveDraft || !dashboard.widgets.length || (!running && variableState.pending)
+            }
             onClick={() => (running ? stop() : void run())}
           >
             {running ? <Square size={13} /> : <Play size={13} />} {running ? 'Cancel' : 'Run'}
           </button>
         </div>
       </div>
-      <div className={`dashboard-workspace${editing ? ' is-editing' : ''}`}>
+      <div className={`dashboard-workspace${editing || editingVariables ? ' is-editing' : ''}`}>
         <div className="dashboard-canvas">
           <div className="dashboard-toolbar">
             <select
@@ -417,6 +488,7 @@ export function Dashboards({ value, services, onChange }: Props) {
                   setLiveDraft(null);
                   apply(next);
                   setEditing(null);
+                  setEditingVariables(false);
                   setMode('visual');
                 }
               }}
@@ -447,6 +519,7 @@ export function Dashboards({ value, services, onChange }: Props) {
                     generation.current?.abort();
                     setLiveDraft(null);
                     setEditing(null);
+                    setEditingVariables(false);
                     apply(selectedDeployment);
                     setMode('visual');
                   }}
@@ -462,6 +535,7 @@ export function Dashboards({ value, services, onChange }: Props) {
                 setLiveDraft(null);
                 apply(newDashboard());
                 setEditing(null);
+                setEditingVariables(false);
                 setMode('visual');
               }}
             >
@@ -481,6 +555,16 @@ export function Dashboards({ value, services, onChange }: Props) {
               disabled={!!liveDraft}
             >
               Auto layout
+            </button>
+            <button
+              className="subtle-button"
+              disabled={!!liveDraft}
+              onClick={() => {
+                setEditing(null);
+                setEditingVariables(true);
+              }}
+            >
+              Variables
             </button>
             <input
               aria-label="Dashboard title"
@@ -521,6 +605,14 @@ export function Dashboards({ value, services, onChange }: Props) {
               ))}
             </select>
           </div>
+          {!liveDraft && (
+            <DashboardVariables
+              variables={dashboard.variables || []}
+              {...variableState}
+              onRefresh={variableState.refresh}
+              onSelect={selectVariable}
+            />
+          )}
           <div className="dashboard-modes" role="group" aria-label="Dashboard construction">
             {(['visual', 'json', 'llm'] as const).map((m) => (
               <button
@@ -669,6 +761,7 @@ export function Dashboards({ value, services, onChange }: Props) {
                       apply(next);
                       setLiveDraft(null);
                       setEditing(null);
+                      setEditingVariables(false);
                       setMode('visual');
                     } catch (e) {
                       setError((e as Error).message);
@@ -740,6 +833,7 @@ export function Dashboards({ value, services, onChange }: Props) {
           {!liveDraft && (
             <DashboardGrid
               widgets={dashboard.widgets}
+              titles={titles}
               results={results}
               controls={{
                 selectedId: editing?.id,
@@ -753,6 +847,7 @@ export function Dashboards({ value, services, onChange }: Props) {
                     ],
                   }),
                 onEdit: (w) => {
+                  setEditingVariables(false);
                   setMode('visual');
                   setEditing({ ...w });
                 },
@@ -769,7 +864,9 @@ export function Dashboards({ value, services, onChange }: Props) {
           {mode === 'visual' && !liveDraft && (
             <button
               className="subtle-button add-panel"
-              disabled={dashboard.widgets.length >= maxDashboardWidgets || !!editing}
+              disabled={
+                dashboard.widgets.length >= maxDashboardWidgets || !!editing || editingVariables
+              }
               onClick={() =>
                 setEditing({
                   ...newWidget(),
@@ -783,6 +880,19 @@ export function Dashboards({ value, services, onChange }: Props) {
             </button>
           )}
         </div>
+        {editingVariables && (
+          <aside className="dashboard-inspector" aria-label="Variable settings">
+            <DashboardVariablesEditor
+              key={dashboard.id}
+              variables={dashboard.variables || []}
+              onCancel={() => setEditingVariables(false)}
+              onDone={(variables: DashboardVariable[]) => {
+                apply({ ...dashboard, variables });
+                setEditingVariables(false);
+              }}
+            />
+          </aside>
+        )}
         {editing && (
           <aside className="dashboard-inspector" aria-label="Widget settings">
             <DashboardEditor
@@ -801,6 +911,7 @@ export function Dashboards({ value, services, onChange }: Props) {
                   });
                   apply(next);
                   setEditing(null);
+                  setEditingVariables(false);
                 } catch (e) {
                   setError((e as Error).message);
                 }
