@@ -1,10 +1,9 @@
 **/node_modules
 web/dist
 **/*.tsbuildinfo
-warroom
+/warroom
 .git
 .github
-charts
 .env
 .env.*
 **/*.key
@@ -12,3 +11,4 @@ charts
 .DS_Store
 
 dashboards
+/charts/

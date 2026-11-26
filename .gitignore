@@ -1,5 +1,5 @@
 web/node_modules/
-warroom
+/warroom
 .env
 .DS_Store
 web/*.tsbuildinfo

@@ -1,0 +1,97 @@
+replicaCount: 1
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # Release workflow fills this with ghcr.io/<owner>/<repository>.
+  repository: ""
+  tag: "" # Defaults to Chart.appVersion; set digest to pin an immutable image.
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+podAnnotations: {}
+podLabels: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+service:
+  type: ClusterIP
+  port: 8080
+containerPort: 8080
+
+# Non-secret app settings. LISTEN_ADDR is managed by containerPort.
+config:
+  LLM_PROVIDER: anthropic
+  LLM_MCP_RPS: "2"
+  LLM_GLOBAL_TOKEN_LIMIT: "2000000"
+  LLM_GLOBAL_TOKEN_WINDOW: 1h
+  LLM_CHAT_TOKEN_LIMIT: "300000"
+  LLM_CHAT_TOKEN_WINDOW: 1h
+
+# Source configuration contains references to credentials, never literal keys.
+dataSources: []
+# Alternative pre-existing ConfigMap containing sources.json (a JSON array).
+dataSourcesConfigMap: ""
+
+# Dashboard definitions must be mounted from an existing volume; no JSON is baked in.
+dashboards:
+  existingConfigMap: ""
+  existingClaim: ""
+  mountPath: /etc/warroom/dashboards
+
+# Optional pre-existing Secret with ANTHROPIC_API_KEY and referenced source credentials.
+existingSecret: ""
+env: [] # Additional EnvVar objects, including valueFrom.secretKeyRef.
+envFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+startupProbe:
+  httpGet: {path: /api/health, port: http}
+  failureThreshold: 30
+  periodSeconds: 2
+readinessProbe:
+  httpGet: {path: /api/health, port: http}
+  periodSeconds: 10
+livenessProbe:
+  httpGet: {path: /api/health, port: http}
+  periodSeconds: 20
+
+# Set these on your ingress controller to preserve long LLM response streams.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: warroom.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Arbitrary Kubernetes resources; each entry is an object or YAML string.
+# Helm tpl is evaluated with the root chart context. Use trusted values only.
+extraObjects: []

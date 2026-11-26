@@ -1,0 +1,13 @@
+{{- if and .Values.dataSources .Values.dataSourcesConfigMap }}
+{{- fail "choose dataSources or dataSourcesConfigMap, not both" }}
+{{- end }}
+{{- if .Values.dataSources }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "warroom.fullname" . }}-sources
+  labels:
+    {{- include "warroom.labels" . | nindent 4 }}
+data:
+  sources.json: {{ toJson .Values.dataSources | quote }}
+{{- end }}
