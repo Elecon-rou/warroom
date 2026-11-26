@@ -1,3 +1,4 @@
+import { useDataSources, sourceName } from './dataSources';
 import { useEffect, useRef, useState } from 'react';
 import { Download, LoaderCircle, RefreshCw } from 'lucide-react';
 import { Metrics } from './Metrics';
@@ -8,6 +9,8 @@ import type { InvestigationWidget } from './investigation';
 type ChatWidgetViewProps = { widget: InvestigationWidget };
 
 export function ChatWidgetView({ widget }: ChatWidgetViewProps) {
+  const sources = useDataSources();
+  const dataSourceName = sourceName(sources, widget.kind, widget.sourceId);
   const [response, setResponse] = useState(widget.response);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -68,10 +71,10 @@ export function ChatWidgetView({ widget }: ChatWidgetViewProps) {
     URL.revokeObjectURL(url);
   }
   return (
-    <section className="chat-widget" aria-label={`${widget.kind} widget: ${widget.title}`}>
+    <section className="chat-widget" aria-label={`${dataSourceName} widget: ${widget.title}`}>
       <div className="chat-widget-heading">
         <strong>{widget.title}</strong>
-        <span className="count">{widget.kind}</span>
+        <span className="count">{dataSourceName}</span>
         <span className="chat-widget-time">
           {new Date(widget.start * 1000).toLocaleString()} —{' '}
           {new Date(widget.end * 1000).toLocaleTimeString()}

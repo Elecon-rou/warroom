@@ -131,7 +131,10 @@ export function App() {
         {
           ...defaultPanel(crypto.randomUUID(), kind),
           text,
-          sourceId: sourceId || selectedSourceId(sources, kind),
+          sourceId:
+            sourceId ||
+            (rows.at(-1)?.kind === kind ? rows.at(-1)?.sourceId : undefined) ||
+            selectedSourceId(sources, kind),
         },
       ],
     };
@@ -383,8 +386,8 @@ export function App() {
             <ServiceGraphView
               settings={explorer.serviceGraph || defaultGraphSettings()}
               onChange={(serviceGraph) => update({ serviceGraph })}
-              onExplore={(service) =>
-                addQuery('traces', new URLSearchParams({ service }).toString())
+              onExplore={(service, sourceId) =>
+                addQuery('traces', new URLSearchParams({ service }).toString(), sourceId)
               }
             />
           ) : page === 'explore' ? (

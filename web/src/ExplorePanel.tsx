@@ -116,7 +116,7 @@ export function ExplorePanel({
           options={sources.map((s) => ({
             value: s.id,
             label: s.name,
-            detail: sourceMetadata[s.kind].name,
+            detail: s.id,
             icon: sourceMetadata[s.kind].icon,
           }))}
           value={selectedSourceId(sources, kind, row.sourceId) || ''}

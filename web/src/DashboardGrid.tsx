@@ -1,4 +1,4 @@
-import { useDataSources, selectedSourceId } from './dataSources';
+import { useDataSources, sourceName } from './dataSources';
 import { ArrowDown, ArrowUp, Copy, Settings2, Trash2 } from 'lucide-react';
 import { DashboardWidgetView, type WidgetResult } from './DashboardWidgetView';
 import { dashboardLayout } from './dashboardLayout';
@@ -41,9 +41,7 @@ export function DashboardGrid({
             <div className="dashboard-widget-heading">
               <h2 title={w.title}>{w.title}</h2>
               <small>
-                {w.type} ·{' '}
-                {sources.find((s) => s.id === selectedSourceId(sources, w.source, w.sourceId))
-                  ?.name || w.source}
+                {w.type} · {sourceName(sources, w.source, w.sourceId)}
                 {results[w.id]?.updated
                   ? ` · ${new Date(results[w.id].updated!).toLocaleTimeString()}`
                   : ''}

@@ -54,15 +54,20 @@ export function DashboardEditor({
             value={w.type}
             onChange={(e) => {
               const type = e.target.value as DashboardWidget['type'];
-              const source = compatibleSources(type).includes(w.source)
-                ? w.source
-                : compatibleSources(type)[0];
+              const allowed = compatibleSources(type);
+              const current = sources.find(
+                (source) => source.id === selectedSourceId(sources, w.source, w.sourceId),
+              );
+              const next =
+                current && allowed.includes(current.kind)
+                  ? current
+                  : sources.find((source) => allowed.includes(source.kind));
+              const kind = next?.kind || allowed[0];
               patch({
                 type,
-                source,
-                sourceId:
-                  source === w.source ? w.sourceId : sources.find((s) => s.kind === source)?.id,
-                query: source === w.source ? w.query : '',
+                source: kind,
+                sourceId: next?.id,
+                query: kind === w.source ? w.query : '',
                 ...(type === 'time-series' ? { width: 1 } : {}),
               });
               setConstructor(false);
@@ -82,7 +87,7 @@ export function DashboardEditor({
           </select>
         </label>
         <label>
-          Source
+          Data source
           <select
             value={selectedSourceId(sources, w.source, w.sourceId) || ''}
             onChange={(e) => {
@@ -92,7 +97,7 @@ export function DashboardEditor({
             }}
           >
             <option value="" disabled>
-              Select source
+              Select data source
             </option>
             {sources
               .filter((s) => compatibleSources(w.type).includes(s.kind))

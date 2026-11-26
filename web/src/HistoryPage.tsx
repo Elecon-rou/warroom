@@ -1,3 +1,4 @@
+import { useDataSources, sourceName } from './dataSources';
 import { ArrowRight, Trash2 } from 'lucide-react';
 import { sourceMetadata, type HistoryEntry } from './explorer';
 
@@ -9,6 +10,7 @@ type HistoryPageProps = {
 };
 
 export function HistoryPage({ entries, onRestore, onClear, error }: HistoryPageProps) {
+  const sources = useDataSources();
   return (
     <main className="explore content-page">
       <div className="page-heading">
@@ -35,7 +37,7 @@ export function HistoryPage({ entries, onRestore, onClear, error }: HistoryPageP
               <article className="history-page-entry" key={index}>
                 <div className="history-entry-meta">
                   <Icon size={15} />
-                  <span>{sourceMetadata[entry.kind].name}</span>
+                  <span>{sourceName(sources, entry.kind, entry.sourceId)}</span>
                   <time>{new Date(entry.at).toLocaleString()}</time>
                 </div>
                 <code>{entry.query}</code>

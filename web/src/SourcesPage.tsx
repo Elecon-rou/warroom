@@ -40,7 +40,7 @@ export function SourcesPage({ sources, error, onExplore }: SourcesPageProps) {
               </div>
               <code>{source.url}</code>
               <button className="text-button" onClick={() => onExplore(source)}>
-                Explore {source.kind}
+                Explore
                 <ArrowRight size={13} />
               </button>
             </article>

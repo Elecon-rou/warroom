@@ -769,7 +769,13 @@ export function Dashboards({ value, services, onChange }: Props) {
             <button
               className="subtle-button add-panel"
               disabled={dashboard.widgets.length >= 24 || !!editing}
-              onClick={() => setEditing(newWidget())}
+              onClick={() =>
+                setEditing({
+                  ...newWidget(),
+                  source: sources[0]?.kind || 'metrics',
+                  sourceId: sources[0]?.id,
+                })
+              }
             >
               <Plus size={14} />
               Add widget

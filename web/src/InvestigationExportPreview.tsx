@@ -1,3 +1,4 @@
+import { useDataSources, sourceName } from './dataSources';
 import { useEffect, useRef } from 'react';
 import { Download, LayoutDashboard, X } from 'lucide-react';
 import type { Dashboard } from './dashboard';
@@ -14,6 +15,7 @@ export function InvestigationExportPreview({
   onClose: () => void;
   onDashboard: (dashboard: Dashboard) => void;
 }) {
+  const sources = useDataSources();
   const panel = useRef<HTMLElement>(null);
   useEffect(() => {
     panel.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -76,7 +78,7 @@ export function InvestigationExportPreview({
         <section key={file.name}>
           <div className="investigation-export-heading">
             <h3>
-              {file.source} · {file.name}
+              {sourceName(sources, file.source, file.sourceId)} · {file.name}
             </h3>
             <button
               className="subtle-button"

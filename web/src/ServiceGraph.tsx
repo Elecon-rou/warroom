@@ -1,4 +1,5 @@
-import { useDataSources, selectedSourceId } from './dataSources';
+import { useDataSources } from './dataSources';
+import { graphSourceOptions, selectedGraphSource } from './sourceSelection';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
@@ -68,11 +69,13 @@ function edgeLabel(edge: GraphEdge, metric: GraphSettings['metric']): string {
 type ServiceGraphViewProps = {
   settings: GraphSettings;
   onChange: (settings: GraphSettings) => void;
-  onExplore: (service: string) => void;
+  onExplore: (service: string, sourceId?: string) => void;
 };
 
 export function ServiceGraphView({ settings, onChange, onExplore }: ServiceGraphViewProps) {
   const sources = useDataSources();
+  const sourceOptions = graphSourceOptions(sources);
+  const selectedSource = selectedGraphSource(sources, settings);
   const [data, setData] = useState<GraphData | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -110,6 +113,7 @@ export function ServiceGraphView({ settings, onChange, onExplore }: ServiceGraph
         ? Date.parse(settings.customStart) / 1000
         : end - Number(ranges.find((r) => r[0] === settings.range)?.[2] || 3600);
     try {
+      if (!selectedSource) throw new Error('Select a configured data source.');
       if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start)
         throw new Error('Invalid time range.');
       const response = await fetch('/api/service-graph', {
@@ -118,9 +122,7 @@ export function ServiceGraphView({ settings, onChange, onExplore }: ServiceGraph
         body: JSON.stringify({
           start,
           end,
-          source: settings.source,
-          metricsSourceId: selectedSourceId(sources, 'metrics', settings.metricsSourceId),
-          tracesSourceId: selectedSourceId(sources, 'traces', settings.tracesSourceId),
+          ...selectedSource.selection,
         }),
         signal: abortController.signal,
       });
@@ -142,7 +144,7 @@ export function ServiceGraphView({ settings, onChange, onExplore }: ServiceGraph
   useEffect(() => {
     runRef.current();
     return () => controller.current?.abort();
-  }, [sources.map((s) => s.id).join(',')]);
+  }, [selectedSource?.value]);
   useEffect(() => {
     if (!settings.refresh) return;
     const timer = window.setInterval(() => {
@@ -260,47 +262,22 @@ export function ServiceGraphView({ settings, onChange, onExplore }: ServiceGraph
             <option value="custom">Custom range</option>
           </select>
         </div>
-        {(['metrics', 'traces'] as const)
-          .filter((kind) => settings.source === 'combined' || settings.source === kind)
-          .map((kind) => (
-            <select
-              key={kind}
-              aria-label={`${kind} graph data source`}
-              value={
-                selectedSourceId(
-                  sources,
-                  kind,
-                  kind === 'metrics' ? settings.metricsSourceId : settings.tracesSourceId,
-                ) || ''
-              }
-              onChange={(e) =>
-                update(
-                  kind === 'metrics'
-                    ? { metricsSourceId: e.target.value }
-                    : { tracesSourceId: e.target.value },
-                )
-              }
-            >
-              <option value="" disabled>
-                Select {kind} source
-              </option>
-              {sources
-                .filter((s) => s.kind === kind)
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-            </select>
-          ))}
         <select
-          aria-label="Service graph sources"
-          value={settings.source}
-          onChange={(e) => update({ source: e.target.value as GraphSettings['source'] })}
+          aria-label="Service graph data source"
+          value={selectedSource?.value || ''}
+          onChange={(event) => {
+            const option = sourceOptions.find((item) => item.value === event.target.value);
+            if (option) update(option.selection);
+          }}
         >
-          <option value="combined">Metrics + traces</option>
-          <option value="metrics">Metrics</option>
-          <option value="traces">Traces</option>
+          <option value="" disabled>
+            Select data source
+          </option>
+          {sourceOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
         <select
           aria-label="Service graph refresh"
@@ -648,7 +625,10 @@ export function ServiceGraphView({ settings, onChange, onExplore }: ServiceGraph
             </button>
           </div>
           {selected && (
-            <button className="text-button" onClick={() => onExplore(selected)}>
+            <button
+              className="text-button"
+              onClick={() => onExplore(selected, selectedSource?.selection.tracesSourceId)}
+            >
               Explore traces
               <ArrowRight size={13} />
             </button>
