@@ -58,6 +58,8 @@ env: [] # Additional EnvVar objects, including valueFrom.secretKeyRef.
 envFrom: []
 extraVolumes: []
 extraVolumeMounts: []
+extraInitContainers: [] # Additional init containers (e.g. one-time git-sync).
+extraContainers: [] # Additional sidecar containers (e.g. git-sync for dashboards).
 
 resources:
   requests:

@@ -147,6 +147,12 @@
     "extraVolumeMounts": {
       "type": "array"
     },
+    "extraInitContainers": {
+      "type": "array"
+    },
+    "extraContainers": {
+      "type": "array"
+    },
     "tolerations": {
       "type": "array"
     },
