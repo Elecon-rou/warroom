@@ -1,19 +1,48 @@
 export type DashboardAttachment = {
   name: string;
-  mediaType: 'image/png' | 'image/jpeg' | 'application/json';
+  mediaType:
+    | 'image/png'
+    | 'image/jpeg'
+    | 'application/json'
+    | 'application/yaml'
+    | 'text/markdown'
+    | 'text/plain';
   data: string;
 };
 export const maxAttachments = 4;
+export const maxDocumentBytes = 256 * 1024;
+export const dashboardAttachmentAccept =
+  'image/png,image/jpeg,application/json,application/yaml,text/yaml,text/markdown,text/plain,.json,.yaml,.yml,.md,.markdown,.txt';
+export const isDashboardDocument = (file: DashboardAttachment) =>
+  ['application/json', 'application/yaml', 'text/markdown', 'text/plain'].includes(file.mediaType);
+
+function documentType(file: File): DashboardAttachment['mediaType'] | undefined {
+  const extension = file.name.toLowerCase().split('.').pop();
+  if (extension === 'json') return 'application/json';
+  if (extension === 'yaml' || extension === 'yml') return 'application/yaml';
+  if (extension === 'md' || extension === 'markdown') return 'text/markdown';
+  if (extension === 'txt') return 'text/plain';
+  const type = file.type.toLowerCase().split(';')[0].trim();
+  if (type === 'text/yaml' || type === 'application/x-yaml') return 'application/yaml';
+  if (['application/json', 'application/yaml', 'text/markdown', 'text/plain'].includes(type))
+    return type as DashboardAttachment['mediaType'];
+}
+
+export function validateDocumentReference(text: string): void {
+  if (new TextEncoder().encode(text).length > maxDocumentBytes)
+    throw new Error('Documents must be at most 256 KiB.');
+  if (!text.trim()) throw new Error('Empty documents cannot be attached.');
+  if (text.includes('\0')) throw new Error('Documents must contain UTF-8 text without null bytes.');
+}
 export const maxAttachmentBytes = 8 * 1024 * 1024;
 export function attachmentBytes(file: DashboardAttachment): number {
-  return file.mediaType === 'application/json'
+  return isDashboardDocument(file)
     ? new TextEncoder().encode(file.data).length
     : Math.floor((file.data.length * 3) / 4) -
         (file.data.endsWith('==') ? 2 : file.data.endsWith('=') ? 1 : 0);
 }
 export function validateJSONReference(text: string): void {
-  if (new TextEncoder().encode(text).length > 256 * 1024)
-    throw new Error('JSON files must be at most 256 KiB.');
+  validateDocumentReference(text);
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -27,14 +56,16 @@ export async function readDashboardAttachment(file: File): Promise<DashboardAtta
   if (!file.size) throw new Error('Empty files cannot be attached.');
   if (new TextEncoder().encode(file.name).length > 200)
     throw new Error('Attachment filename is too long.');
-  if (file.name.toLowerCase().endsWith('.json') || file.type === 'application/json') {
-    if (file.size > 256 * 1024) throw new Error('JSON files must be at most 256 KiB.');
+  const mediaType = documentType(file);
+  if (mediaType) {
+    if (file.size > maxDocumentBytes) throw new Error('Documents must be at most 256 KiB.');
     const data = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
-    validateJSONReference(data);
-    return { name: file.name, mediaType: 'application/json', data };
+    validateDocumentReference(data);
+    if (mediaType === 'application/json') validateJSONReference(data);
+    return { name: file.name, mediaType, data };
   }
   if (!['image/png', 'image/jpeg'].includes(file.type))
-    throw new Error('Attach PNG/JPEG screenshots or JSON files.');
+    throw new Error('Attach JSON, YAML, Markdown or text documents, or PNG/JPEG screenshots.');
   if (file.size > 4 * 1024 * 1024) throw new Error('Screenshots must be at most 4 MiB.');
   const data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();

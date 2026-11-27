@@ -190,11 +190,11 @@ func TestDashboardAttachmentValidation(t *testing.T) {
 	}
 }
 func TestDashboardAttachmentsReachFilterAndConstructionContext(t *testing.T) {
-	files := []DashboardAttachment{attachmentPNG(), {Name: "grafana.json", MediaType: "application/json", Data: `{"title":"Node CPU","panels":[]}`}}
+	files := []DashboardAttachment{attachmentPNG(), {Name: "grafana.json", MediaType: "application/json", Data: `{"title":"Node CPU","panels":[]}`}, {Name: "spec.md", MediaType: "text/markdown", Data: "# Node dashboard"}, {Name: "panels.yaml", MediaType: "application/yaml", Data: "title: CPU"}}
 	content := dashboardContent("CPU dashboard", files)
 	payload, _ := newClaude().payload(CompletionRequest{Messages: []LLMMessage{contentMessage("user", content)}})
 	encoded, _ := json.Marshal(payload)
-	for _, want := range []string{`"type":"image"`, `"type":"base64"`, files[0].Data, "Node CPU", "grafana.json"} {
+	for _, want := range []string{`"type":"image"`, `"type":"base64"`, files[0].Data, "Node CPU", "grafana.json", "spec.md", "Node dashboard", "panels.yaml", "title: CPU", "untrusted_document_reference"} {
 		if !strings.Contains(string(encoded), want) {
 			t.Fatal("missing multimodal reference", want)
 		}
@@ -209,7 +209,7 @@ func TestDashboardAttachmentsReachFilterAndConstructionContext(t *testing.T) {
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&payload)
-		if payload.System != prompt("dashboard-filter") || len(payload.Messages) != 1 || len(payload.Messages[0].Content) != 4 {
+		if payload.System != prompt("dashboard-filter") || len(payload.Messages) != 1 || len(payload.Messages[0].Content) != 6 {
 			t.Error("references did not reach semantic filter")
 		}
 		claudeReply(w, `{"verdict":"FAIL"}`)
@@ -703,5 +703,90 @@ func TestDashboardPanelLimit64(t *testing.T) {
 		if len(partial) != min(count, 64) {
 			t.Fatalf("stream preview emitted %d of %d widgets", len(partial), count)
 		}
+	}
+}
+
+func TestDashboardDocumentAttachmentValidation(t *testing.T) {
+	for _, mediaType := range []string{"application/json", "application/yaml", "text/markdown", "text/plain"} {
+		data := `{"panels":[]}`
+		file := DashboardAttachment{Name: "reference", MediaType: mediaType, Data: data}
+		if err := validateDashboardAttachments([]DashboardAttachment{file}); err != nil {
+			t.Fatal(err)
+		}
+		for _, invalid := range []string{"", " \n ", "hello\x00world", string([]byte{255, 254}), strings.Repeat("x", (256<<10)+1)} {
+			file.Data = invalid
+			if err := validateDashboardAttachments([]DashboardAttachment{file}); err == nil {
+				t.Fatal("invalid document accepted", mediaType)
+			}
+		}
+	}
+	files := []DashboardAttachment{
+		{Name: "a.md", MediaType: "text/markdown", Data: strings.Repeat("a", 128<<10)},
+		{Name: "b.yaml", MediaType: "application/yaml", Data: strings.Repeat("b", 128<<10)},
+		{Name: "c.json", MediaType: "application/json", Data: `{}`},
+	}
+	if err := validateDashboardAttachments(files); err == nil {
+		t.Fatal("combined document limit bypassed")
+	}
+}
+
+func TestDashboardDocumentsReachConstructionAfterSemanticPass(t *testing.T) {
+	files := []DashboardAttachment{
+		{Name: "grafana.json", MediaType: "application/json", Data: `{"apiVersion":"dashboard.grafana.app/v2","kind":"Dashboard","spec":{"title":"ReferenceCPU","elements":{}}}`},
+		{Name: "layout.yaml", MediaType: "application/yaml", Data: "title: ReferenceMemory"},
+		{Name: "notes.md", MediaType: "text/markdown", Data: "# ReferenceDisk"},
+		{Name: "notes.txt", MediaType: "text/plain", Data: "ReferenceNetwork"},
+	}
+	discoveries := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		var result any
+		switch payload["method"] {
+		case "initialize":
+			result = map[string]any{"protocolVersion": "2025-03-26"}
+		case "notifications/initialized":
+			w.WriteHeader(202)
+			return
+		case "tools/list":
+			result = map[string]any{"tools": []any{map[string]any{"name": "metrics", "annotations": map[string]any{"readOnlyHint": true}, "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}}}}
+		case "tools/call":
+			discoveries++
+			result = map[string]any{"content": []any{map[string]any{"type": "text", "text": "up"}}}
+		}
+		send(w, 200, map[string]any{"jsonrpc": "2.0", "id": payload["id"], "result": result})
+	}))
+	defer server.Close()
+	a := newTestApp()
+	client := newMCP("metrics")
+	client.endpoint = server.URL
+	client.interval = 0
+	a.mcps = map[string]*MCPClient{"metrics": client}
+	calls := 0
+	a.llm = newLLM(&fakeLLMProvider{complete: func(_ context.Context, q CompletionRequest) (CompletionResponse, error) {
+		calls++
+		payload, _ := json.Marshal(q.Messages)
+		for _, reference := range []string{"ReferenceCPU", "ReferenceMemory", "ReferenceDisk", "ReferenceNetwork", "grafana.json", "layout.yaml", "notes.md", "notes.txt"} {
+			if !strings.Contains(string(payload), reference) {
+				t.Error("missing document reference", reference, q.Task)
+			}
+		}
+		if q.Task == TaskFilter {
+			if discoveries != 0 {
+				t.Error("discovery ran before semantic approval")
+			}
+			return llmText(`{"verdict":"PASS"}`), nil
+		}
+		if calls == 2 {
+			return CompletionResponse{StopReason: "tool_use", Content: []LLMContent{{Type: "tool_use", ID: "m1", Name: "metrics_metrics", Input: json.RawMessage(`{}`)}}}, nil
+		}
+		data, _ := json.Marshal(testDashboard())
+		return llmText(string(data)), nil
+	}}, nil)
+	body, _ := json.Marshal(map[string]any{"prompt": "", "attachments": files, "start": 1700000000, "end": 1700003600})
+	w := httptest.NewRecorder()
+	a.handler().ServeHTTP(w, httptest.NewRequest("POST", "/api/dashboards/generate", bytes.NewReader(body)))
+	if w.Code != 200 || discoveries != 1 || calls != 3 {
+		t.Fatal(w.Code, w.Body.String(), discoveries, calls)
 	}
 }

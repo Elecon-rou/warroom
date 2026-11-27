@@ -2,6 +2,9 @@ import { Paperclip, X } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import {
   attachmentBytes,
+  dashboardAttachmentAccept,
+  isDashboardDocument,
+  maxDocumentBytes,
   maxAttachmentBytes,
   maxAttachments,
   readDashboardAttachment,
@@ -39,12 +42,10 @@ export function DashboardAttachments({
       if (all.reduce((sum, file) => sum + attachmentBytes(file), 0) > maxAttachmentBytes)
         throw new Error('Attachments must total at most 8 MiB.');
       if (
-        all
-          .filter((file) => file.mediaType === 'application/json')
-          .reduce((sum, file) => sum + attachmentBytes(file), 0) >
-        256 * 1024
+        all.filter(isDashboardDocument).reduce((sum, file) => sum + attachmentBytes(file), 0) >
+        maxDocumentBytes
       )
-        throw new Error('JSON attachments must total at most 256 KiB.');
+        throw new Error('Documents must total at most 256 KiB.');
       onChange(all);
     } catch (e) {
       onError((e as Error).message);
@@ -88,20 +89,23 @@ export function DashboardAttachments({
           type="file"
           hidden
           multiple
-          accept="image/png,image/jpeg,application/json,.json"
-          aria-label="Attach screenshots or JSON files"
+          accept={dashboardAttachmentAccept}
+          aria-label="Attach documents or screenshots"
           disabled={disabled || reading}
           onChange={(e) => {
             void add(Array.from(e.target.files || []));
             e.target.value = '';
           }}
         />
-        <span>PNG/JPEG · JSON · paste or drop files · up to 4 files / 8 MiB total</span>
+        <span>
+          JSON / YAML / Markdown / TXT · PNG / JPEG · up to 4 files · documents 256 KiB total · all
+          files 8 MiB
+        </span>
       </div>
       <div className="dashboard-attachment-list">
         {files.map((file, index) => (
           <div className="dashboard-attachment" key={`${index}-${file.name}`}>
-            {file.mediaType === 'application/json' ? (
+            {isDashboardDocument(file) ? (
               <details>
                 <summary>{file.name}</summary>
                 <pre>

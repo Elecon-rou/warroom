@@ -153,27 +153,32 @@ func validateDashboardAttachments(files []DashboardAttachment) error {
 		return fmt.Errorf("Attach at most four files.")
 	}
 	total := 0
-	jsonTotal := 0
+	documentTotal := 0
 	for _, file := range files {
 		if !dashboardText(file.Name, 200) || !utf8.ValidString(file.Name) {
 			return fmt.Errorf("Invalid attachment name.")
 		}
 		switch file.MediaType {
-		case "application/json":
+		case "application/json", "application/yaml", "text/markdown", "text/plain":
 			if len(file.Data) > 256<<10 || !utf8.ValidString(file.Data) {
-				return fmt.Errorf("JSON attachments must be UTF-8 and at most 256 KiB.")
+				return fmt.Errorf("Documents must be UTF-8 and at most 256 KiB.")
 			}
-			var value any
-			if json.Unmarshal([]byte(file.Data), &value) != nil {
-				return fmt.Errorf("Invalid JSON attachment: %s", file.Name)
+			if strings.TrimSpace(file.Data) == "" || strings.ContainsRune(file.Data, '\x00') {
+				return fmt.Errorf("Documents must contain non-empty UTF-8 text without null bytes.")
 			}
-			switch value.(type) {
-			case map[string]any, []any:
-			default:
-				return fmt.Errorf("JSON attachment must contain an object or array.")
+			if file.MediaType == "application/json" {
+				var value any
+				if json.Unmarshal([]byte(file.Data), &value) != nil {
+					return fmt.Errorf("Invalid JSON attachment: %s", file.Name)
+				}
+				switch value.(type) {
+				case map[string]any, []any:
+				default:
+					return fmt.Errorf("JSON attachment must contain an object or array.")
+				}
 			}
 			total += len(file.Data)
-			jsonTotal += len(file.Data)
+			documentTotal += len(file.Data)
 		case "image/png", "image/jpeg":
 			if len(file.Data) > base64.StdEncoding.EncodedLen(4<<20) {
 				return fmt.Errorf("Screenshots must be at most 4 MiB.")
@@ -189,11 +194,11 @@ func validateDashboardAttachments(files []DashboardAttachment) error {
 			}
 			total += len(data)
 		default:
-			return fmt.Errorf("Only PNG/JPEG screenshots and JSON files are supported.")
+			return fmt.Errorf("Only JSON, YAML, Markdown or text documents and PNG/JPEG screenshots are supported.")
 		}
 	}
-	if jsonTotal > 256<<10 {
-		return fmt.Errorf("JSON attachments must total at most 256 KiB.")
+	if documentTotal > 256<<10 {
+		return fmt.Errorf("Documents must total at most 256 KiB.")
 	}
 	if total > 8<<20 {
 		return fmt.Errorf("Attachments must total at most 8 MiB.")
@@ -205,6 +210,9 @@ func dashboardContent(text string, files []DashboardAttachment) []LLMContent {
 	for _, file := range files {
 		if file.MediaType == "application/json" {
 			wrapped, _ := json.Marshal(map[string]string{"reference_filename": file.Name, "untrusted_json_reference": file.Data})
+			content = append(content, LLMContent{Type: "text", Text: string(wrapped)})
+		} else if oneOf(file.MediaType, "application/yaml", "text/markdown", "text/plain") {
+			wrapped, _ := json.Marshal(map[string]string{"reference_filename": file.Name, "reference_media_type": file.MediaType, "untrusted_document_reference": file.Data})
 			content = append(content, LLMContent{Type: "text", Text: string(wrapped)})
 		} else {
 			name, _ := json.Marshal(file.Name)
