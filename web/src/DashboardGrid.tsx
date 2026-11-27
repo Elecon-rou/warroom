@@ -1,3 +1,4 @@
+import { hasWidgetData } from './dashboardResults';
 import { useDataSources, sourceName } from './dataSources';
 import { ArrowDown, ArrowUp, Copy, Settings2, Trash2 } from 'lucide-react';
 import { DashboardWidgetView, type WidgetResult } from './DashboardWidgetView';
@@ -37,6 +38,7 @@ export function DashboardGrid({
           key={w.id}
           className={`dashboard-widget${controls?.selectedId === w.id ? ' selected' : ''}`}
           data-widget-type={w.type}
+          aria-busy={results[w.id]?.pending || undefined}
           style={{ gridColumn: `span ${layout.spans[w.id]}` }}
         >
           <header>
@@ -87,6 +89,11 @@ export function DashboardGrid({
           </header>
           <div className="dashboard-widget-body">
             <DashboardWidgetView widget={w} result={results[w.id]} />
+            {results[w.id]?.error && hasWidgetData(results[w.id]) && (
+              <p className="dashboard-refresh-error" role="status" title={results[w.id].error}>
+                Refresh failed · {results[w.id].error}
+              </p>
+            )}
           </div>
         </section>
       ))}

@@ -4231,6 +4231,10 @@ h1 {
   font-size: 12px;
 }
 .dashboard-widget header small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 10px;
 }
 .dashboard-widget .inline-tools {
@@ -4245,20 +4249,23 @@ h1 {
   padding: 4px;
 }
 .dashboard-widget-body {
+  position: relative;
   padding: 12px;
-  flex: 1;
-  min-height: 150px;
+  flex: none;
+  height: 330px;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 .dashboard-widget[data-widget-type='number'] .dashboard-widget-body {
-  min-height: 118px;
+  height: 166px;
 }
 .dashboard-widget[data-widget-type='gauge'] .dashboard-widget-body {
-  min-height: 185px;
+  height: 222px;
 }
 .dashboard-widget[data-widget-type='time-series'] .dashboard-widget-body {
-  overflow: visible;
-  max-height: none;
-  min-height: 270px;
+  height: clamp(350px, 42cqi, 440px);
 }
 .dashboard-number {
   font-size: clamp(22px, 15cqi, 48px);
@@ -4530,4 +4537,20 @@ h1 {
 
 .dashboard-editor-heading.dashboard-variables-heading {
   justify-content: flex-start;
+}
+
+/* Refresh status overlays the retained snapshot without changing panel geometry. */
+.dashboard-refresh-error {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  right: 12px;
+  margin: 0;
+  padding: 6px 8px;
+  background: #172129;
+  color: #ff9bac;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

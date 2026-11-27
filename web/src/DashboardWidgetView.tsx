@@ -1,6 +1,7 @@
 import { formatDashboardValue } from './dashboardLayout';
 import { DashboardTimeSeries } from './DashboardTimeSeries';
-import { useState } from 'react';
+import { memo, useState } from 'react';
+import { hasWidgetData, sameWidgetContents } from './dashboardResults';
 import { Logs } from './Logs';
 import { colors, short, type ResponseData } from './types';
 import { reduceValues, widgetRows, type DashboardWidget } from './dashboard';
@@ -13,25 +14,20 @@ export type WidgetResult = {
   graph?: ForceData;
   updated?: number;
 };
-export function DashboardWidgetView({
-  widget: w,
-  result,
-}: {
-  widget: DashboardWidget;
-  result?: WidgetResult;
-}) {
+function WidgetContents({ widget: w, result }: { widget: DashboardWidget; result?: WidgetResult }) {
   const [logView, setLogView] = useState({
     filter: '',
     wrap: true,
     sort: 'query' as 'query' | 'newest' | 'oldest',
   });
-  if (result?.pending)
+  if (result?.pending && !hasWidgetData(result))
     return (
       <p className="dashboard-empty" role="status">
         Loading…
       </p>
     );
-  if (result?.error) return <p className="inline-error">{result.error}</p>;
+  if (result?.error && !hasWidgetData(result))
+    return <p className="inline-error">{result.error}</p>;
   if (w.type === 'force-graph')
     return result?.graph?.nodes.length ? (
       <DashboardForceGraph data={result.graph} />
@@ -263,3 +259,9 @@ export function DashboardWidgetView({
     </>
   );
 }
+
+export const DashboardWidgetView = memo(
+  WidgetContents,
+  (before, after) =>
+    before.widget === after.widget && sameWidgetContents(before.result, after.result),
+);

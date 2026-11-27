@@ -18,14 +18,25 @@ export function DashboardForceGraph({ data }: { data: ForceData }) {
       data.nodes.slice(0, 80).some((n) => n.id === e.source) &&
       data.nodes.slice(0, 80).some((n) => n.id === e.target),
   );
+  const topology = JSON.stringify([
+    data.nodes
+      .slice(0, 80)
+      .map((node) => node.id)
+      .sort(),
+    edges.map((edge) => [edge.source, edge.target]).sort(),
+  ]);
   useEffect(() => {
-    nodes.current = data.nodes.slice(0, 80).map((n, i, all) => ({
-      ...n,
-      x: 300 + 180 * Math.cos((i / all.length) * Math.PI * 2),
-      y: 170 + 120 * Math.sin((i / all.length) * Math.PI * 2),
-      vx: 0,
-      vy: 0,
-    }));
+    const previous = new Map(nodes.current.map((node) => [node.id, node]));
+    nodes.current = data.nodes.slice(0, 80).map(
+      (n, i, all) =>
+        previous.get(n.id) || {
+          ...n,
+          x: 300 + 180 * Math.cos((i / all.length) * Math.PI * 2),
+          y: 170 + 120 * Math.sin((i / all.length) * Math.PI * 2),
+          vx: 0,
+          vy: 0,
+        },
+    );
     let raf = 0;
     let tick = 0;
     function step() {
@@ -74,7 +85,7 @@ export function DashboardForceGraph({ data }: { data: ForceData }) {
     }
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [data]);
+  }, [topology]);
   const map = new Map(frame.map((n) => [n.id, n]));
   function move(event: React.PointerEvent<SVGSVGElement>) {
     if (!drag.current || !svg.current) return;

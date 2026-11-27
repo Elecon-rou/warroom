@@ -24,3 +24,51 @@ export function transferPreviewResults(
     }
   return { results, missing: next.widgets.filter((w) => !results[w.id]).map((w) => w.id) };
 }
+
+export const hasWidgetData = (result?: WidgetResult) =>
+  result?.response !== undefined || result?.graph !== undefined;
+
+/** Keep the displayed snapshot mounted while its replacement is being loaded. */
+export function beginWidgetRefresh(previous?: WidgetResult): WidgetResult {
+  return { ...previous, pending: true };
+}
+export function finishWidgetRefresh(
+  previous: WidgetResult | undefined,
+  next: WidgetResult,
+): WidgetResult {
+  if (next.error && hasWidgetData(previous))
+    return { ...previous, pending: false, error: next.error };
+  return next;
+}
+/** Stage a complete refresh before publishing any result. Cancelled batches never commit. */
+export async function preloadDashboardResults(
+  widgets: DashboardWidget[],
+  signal: AbortSignal,
+  load: (widget: DashboardWidget) => Promise<WidgetResult>,
+): Promise<Record<string, WidgetResult> | null> {
+  const queue = [...widgets];
+  const staged: Record<string, WidgetResult> = {};
+  async function worker() {
+    while (queue.length && !signal.aborted) {
+      const widget = queue.shift()!;
+      try {
+        const result = await load(widget);
+        if (!signal.aborted) staged[widget.id] = result;
+      } catch (error) {
+        if (!signal.aborted)
+          staged[widget.id] = { error: error instanceof Error ? error.message : 'Query failed.' };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
+  return signal.aborted ? null : staged;
+}
+/** Loading/error metadata must not redraw a chart that still displays the same data. */
+export function sameWidgetContents(before?: WidgetResult, after?: WidgetResult) {
+  return (
+    before?.response === after?.response &&
+    before?.graph === after?.graph &&
+    (hasWidgetData(before) ||
+      (before?.pending === after?.pending && before?.error === after?.error))
+  );
+}

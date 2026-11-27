@@ -7,7 +7,12 @@ import {
   type DashboardVariable,
 } from './dashboardVariables';
 import { useDataSources, selectedSourceId } from './dataSources';
-import { transferPreviewResults } from './dashboardResults';
+import {
+  beginWidgetRefresh,
+  finishWidgetRefresh,
+  preloadDashboardResults,
+  transferPreviewResults,
+} from './dashboardResults';
 import { DashboardGrid } from './DashboardGrid';
 import { DashboardLivePreview } from './DashboardLivePreview';
 import {
@@ -162,13 +167,16 @@ export function Dashboards({ value, services, onChange }: Props) {
     queryKeys.current = keys;
     if (same && !transferred) return;
     active.current?.abort();
+    active.current = null;
     setRunning(false);
     setResults((old) =>
       Object.fromEntries(
         dashboard.widgets.flatMap((w) => {
           const result =
             transferred?.[w.id] || (previous[w.id] === keys[w.id] ? old[w.id] : undefined);
-          return result && !result.pending ? [[w.id, result]] : [];
+          return result && (!result.pending || result.response || result.graph)
+            ? [[w.id, { ...result, pending: false }]]
+            : [];
         }),
       ),
     );
@@ -225,14 +233,13 @@ export function Dashboards({ value, services, onChange }: Props) {
     );
   }
   async function run(ids?: string[]) {
-    if (running || variableState.pending) return;
+    if (active.current || variableState.pending) return;
     try {
       parseDashboard(dashboard);
     } catch (e) {
       setError((e as Error).message);
       return;
     }
-    active.current?.abort();
     const controller = new AbortController();
     active.current = controller;
     setRunning(true);
@@ -242,57 +249,50 @@ export function Dashboards({ value, services, onChange }: Props) {
     const targets = ids ? dashboard.widgets.filter((w) => ids.includes(w.id)) : dashboard.widgets;
     setResults((old) => ({
       ...old,
-      ...Object.fromEntries(targets.map((w) => [w.id, { pending: true }])),
+      ...Object.fromEntries(targets.map((w) => [w.id, beginWidgetRefresh(old[w.id])])),
     }));
-    const queue = [...targets];
-    // Bound concurrency; the server continues to enforce source and query limits.
-    async function worker() {
-      while (queue.length && !controller.signal.aborted) {
-        const w = queue.shift()!;
-        try {
-          if (w.type !== 'force-graph' && !w.query.trim()) throw new Error('Query required.');
-          const resolved = resolveDashboardWidget(w, dashboard, variableState.values, {
-            start,
-            end,
-          });
-          const graph = w.type === 'force-graph';
-          const res = await fetch(graph ? '/api/service-graph' : '/api/query', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify(
-              graph
-                ? {
-                    source: w.source,
-                    sourceId: selectedSourceId(sources, w.source, w.sourceId),
-                    start,
-                    end,
-                  }
-                : {
-                    kind: w.source,
-                    sourceId: selectedSourceId(sources, w.source, w.sourceId),
-                    query: resolved.query,
-                    start,
-                    end,
-                    limit: 100,
-                    step: 0,
-                  },
-            ),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Query failed.');
-          if (!controller.signal.aborted)
-            setResults((old) => ({
-              ...old,
-              [w.id]: { [graph ? 'graph' : 'response']: data, updated: Date.now() },
-            }));
-        } catch (e) {
-          if (!controller.signal.aborted)
-            setResults((old) => ({ ...old, [w.id]: { error: (e as Error).message } }));
-        }
-      }
+    const staged = await preloadDashboardResults(targets, controller.signal, async (w) => {
+      if (w.type !== 'force-graph' && !w.query.trim()) throw new Error('Query required.');
+      const resolved = resolveDashboardWidget(w, dashboard, variableState.values, {
+        start,
+        end,
+      });
+      const graph = w.type === 'force-graph';
+      const res = await fetch(graph ? '/api/service-graph' : '/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify(
+          graph
+            ? {
+                source: w.source,
+                sourceId: selectedSourceId(sources, w.source, w.sourceId),
+                start,
+                end,
+              }
+            : {
+                kind: w.source,
+                sourceId: selectedSourceId(sources, w.source, w.sourceId),
+                query: resolved.query,
+                start,
+                end,
+                limit: 100,
+                step: 0,
+              },
+        ),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Query failed.');
+      return { [graph ? 'graph' : 'response']: data, updated: Date.now() };
+    });
+    if (staged && active.current === controller && !controller.signal.aborted) {
+      setResults((old) => ({
+        ...old,
+        ...Object.fromEntries(
+          Object.entries(staged).map(([id, result]) => [id, finishWidgetRefresh(old[id], result)]),
+        ),
+      }));
     }
-    await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
     if (active.current === controller) {
       active.current = null;
       setRunning(false);
