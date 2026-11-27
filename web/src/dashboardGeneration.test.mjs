@@ -1,7 +1,11 @@
 import { newWidget } from './dashboard.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readDashboardGeneration, generationTime } from './dashboardGeneration.ts';
+import {
+  readDashboardGeneration,
+  generationTime,
+  mergeWidgetEvent,
+} from './dashboardGeneration.ts';
 const encoder = new TextEncoder();
 function stream(parts) {
   return new Response(
@@ -129,5 +133,42 @@ test('generation streams all 64 panels and rejects an out-of-range 65th event', 
         () => {},
       ),
     /Invalid dashboard generation response/,
+  );
+});
+
+test('streamed variable definitions follow widgets and explicit removal', async () => {
+  const variables = [{ name: 'env', type: 'custom', options: ['dev'], current: ['dev'] }];
+  const event = {
+    type: 'widget',
+    revision: 1,
+    index: 0,
+    elapsedMs: 0,
+    widget: { ...newWidget(), query: 'up{env="$env"}' },
+    variables,
+  };
+  const received = [];
+  await readDashboardGeneration(
+    stream([
+      JSON.stringify(event) + '\n',
+      JSON.stringify({ type: 'result', status: 200, data: {} }) + '\n',
+    ]),
+    () => {},
+    (value) => received.push(value),
+  );
+  assert.equal(received[0].variables[0].name, 'env');
+  let state = mergeWidgetEvent({ revision: 0, widgets: {} }, received[0]);
+  state = mergeWidgetEvent(state, { ...event, index: 1, variables: undefined });
+  assert.equal(state.variables[0].current[0], 'dev');
+  state = mergeWidgetEvent(state, { ...event, revision: 2, variables: [] });
+  assert.deepEqual(state.variables, []);
+  await assert.rejects(
+    () =>
+      readDashboardGeneration(
+        stream([
+          JSON.stringify({ ...event, variables: [{ name: 'bad name', type: 'custom' }] }) + '\n',
+        ]),
+        () => {},
+      ),
+    /variable/i,
   );
 });

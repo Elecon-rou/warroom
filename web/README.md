@@ -132,3 +132,7 @@ Query-variable helper syntax uses the selected source's native metadata API:
 - Traces: `services()`, `operations("$service")`.
 
 Built-ins include `$__from` and `$__to` (Unix milliseconds), `$__range`, `$__range_s`, `$__range_ms`, `$__interval`, `$__interval_ms`, and `$__rate_interval`. The automatic interval targets 240 data points; the rate interval uses four intervals with a 60-second minimum, rather than a discovered scrape interval. Variable syntax follows the familiar [Grafana syntax](https://grafana.com/docs/grafana/latest/visualizations/dashboards/variables/variable-syntax/); this is Warroom's schema, not a Grafana dashboard import.
+
+### Dashboard variables in LLM discovery
+
+Generation supplies structured definitions and selections to the model. The local `dashboard_variables` tool inspects or replaces request-local bindings. MCP resolves placeholders before upstream calls, preserving read-only, source, tenant, rate and result limits. Unknown or unselected variables fail before execution. Final JSON retains templates; streamed widgets carry working definitions for previews. Generation never persists bindings to deployed files.

@@ -409,7 +409,11 @@ export function Dashboards({ value, services, onChange }: Props) {
             title: 'Generated dashboard',
             range: end - start,
             refresh: 0,
-            ...(dashboard.variables ? { variables: dashboard.variables } : {}),
+            ...(next.variables !== undefined
+              ? { variables: next.variables }
+              : dashboard.variables
+                ? { variables: dashboard.variables }
+                : {}),
             widgets: Object.entries(next.widgets)
               .sort(([a], [b]) => Number(a) - Number(b))
               .map(([, widget]) => widget),

@@ -5,3 +5,7 @@ traces: VictoriaTraces Jaeger URL search parameters: service=URL_ENCODED_NAME&op
 All calls are read-only and use the selected time range. Existing MCP limits apply. Avoid repeated broad scans; cap discovery to relevant names, labels and small samples.
 
 Configured sources arrive as `available_sources: [{id,kind,name,url}, ...]`. There may be multiple sources for each kind. Every widget must carry both `source` (language kind) and `sourceId` (configured instance ID). Tool names use that instance ID as prefix. Discover each selected ID independently and never silently switch source/tenant. Do not invent or expose credentials.
+
+## Variable option discovery
+
+Dashboard helpers (`label_values(...)`, `metrics()`, `field_values(...)`, `services()`, `operations(...)`) configure native UI selectors; they are not expressions to execute with a query tool. Follow the actual supplied MCP schemas: metric name/label/series tools, log field/value tools, and trace service/operation tools. Tool names and arguments may differ from UI helpers. Preserve chained option expressions as templates in final definitions; use registered bindings to verify concrete samples.

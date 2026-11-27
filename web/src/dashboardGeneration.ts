@@ -1,3 +1,4 @@
+import type { DashboardVariable } from './dashboardVariables.ts';
 import { maxDashboardWidgets, parseDashboard, type DashboardWidget } from './dashboard.ts';
 export type DashboardProgress = {
   type: 'progress';
@@ -7,6 +8,7 @@ export type DashboardProgress = {
 };
 export type DashboardWidgetEvent = {
   type: 'widget';
+  variables?: DashboardVariable[];
   revision: number;
   index: number;
   widget: DashboardWidget;
@@ -52,8 +54,13 @@ export async function readDashboardGeneration(
         range: 3600,
         refresh: 0,
         widgets: [value.widget],
+        ...(value.variables !== undefined ? { variables: value.variables } : {}),
       });
-      onWidget({ ...value, widget: validated.widgets[0] });
+      onWidget({
+        ...value,
+        widget: validated.widgets[0],
+        ...(value.variables !== undefined ? { variables: validated.variables } : {}),
+      });
     } else if (
       value.type === 'result' &&
       Number.isInteger(value.status) &&
@@ -96,7 +103,11 @@ export const generationTime = (ms: number) => {
   return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
 };
 
-export type LiveWidgetState = { revision: number; widgets: Record<number, DashboardWidget> };
+export type LiveWidgetState = {
+  revision: number;
+  variables?: DashboardVariable[];
+  widgets: Record<number, DashboardWidget>;
+};
 export function mergeWidgetEvent(
   state: LiveWidgetState,
   event: DashboardWidgetEvent,
@@ -104,6 +115,11 @@ export function mergeWidgetEvent(
   if (event.revision < state.revision) return state;
   return {
     revision: event.revision,
+    ...(event.variables !== undefined
+      ? { variables: event.variables }
+      : state.variables !== undefined
+        ? { variables: state.variables }
+        : {}),
     widgets: {
       ...(event.revision === state.revision ? state.widgets : {}),
       [event.index]: event.widget,

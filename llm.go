@@ -20,11 +20,12 @@ func prompt(name string) string {
 }
 
 type LLMRequest struct {
-	Kind     string  `json:"kind"`
-	SourceID string  `json:"sourceId,omitempty"`
-	Prompt   string  `json:"prompt"`
-	Start    float64 `json:"start"`
-	End      float64 `json:"end"`
+	variables *dashboardVariableScope
+	Kind      string  `json:"kind"`
+	SourceID  string  `json:"sourceId,omitempty"`
+	Prompt    string  `json:"prompt"`
+	Start     float64 `json:"start"`
+	End       float64 `json:"end"`
 }
 
 func (a *App) generate(w http.ResponseWriter, r *http.Request) {
