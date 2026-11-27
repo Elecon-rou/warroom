@@ -29,6 +29,7 @@ import { Download, Link, Play, Plus, RefreshCw, Square } from 'lucide-react';
 import { DashboardEditor } from './DashboardEditor';
 import { type WidgetResult } from './DashboardWidgetView';
 import {
+  dashboardExportFilename,
   maxDashboardWidgets,
   newDashboard,
   newWidget,
@@ -330,7 +331,7 @@ export function Dashboards({ value, services, onChange }: Props) {
       );
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'dashboard.json';
+      a.download = dashboardExportFilename(valid.title);
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {

@@ -238,3 +238,21 @@ export function widgetRows(w: DashboardWidget, response: ResponseData): Datum[] 
     fields: row,
   }));
 }
+
+/** Use the dashboard title as a portable filename for every dashboard export. */
+export function dashboardExportFilename(title: string): string {
+  let name =
+    Array.from(
+      title
+        .normalize('NFKC')
+        .replace(/\.json\s*$/i, '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, '-')
+        .replace(/^-+|-+$/g, ''),
+    )
+      .slice(0, 100)
+      .join('')
+      .replace(/-+$/g, '') || 'dashboard';
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name)) name = `dashboard-${name}`;
+  return `${name}.json`;
+}

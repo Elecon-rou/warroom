@@ -1,7 +1,7 @@
 import { useDataSources, sourceName } from './dataSources';
 import { useEffect, useRef } from 'react';
 import { Download, LayoutDashboard, X } from 'lucide-react';
-import type { Dashboard } from './dashboard';
+import { dashboardExportFilename, type Dashboard } from './dashboard';
 import { DashboardLivePreview } from './DashboardLivePreview';
 import { downloadContextFile } from './investigationExport';
 import type { InvestigationExportDraft } from './useInvestigationExport';
@@ -51,7 +51,7 @@ export function InvestigationExportPreview({
               className="subtle-button"
               onClick={() =>
                 downloadContextFile(
-                  'investigation-dashboard.json',
+                  dashboardExportFilename(draft.dashboard!.title),
                   JSON.stringify(draft.dashboard, null, 2),
                 )
               }
